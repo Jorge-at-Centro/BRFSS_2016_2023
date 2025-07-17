@@ -1,0 +1,377 @@
+---
+title: "BRFSS_2023_Recode"
+author: "Verónica Díaz Torres"
+date: "2025-01-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r message=FALSE, warning=FALSE, echo=T}
+library(tidyverse)
+library(tidycensus)
+library(haven)
+library(janitor)
+library(descriptio)
+#install.packages("weights")
+library(weights)
+#install.packages("kableExtra")
+library(kableExtra)
+library(totalcensus)
+#install.packages("cdlTools")
+library(cdlTools)
+#install.packages("expss")
+library(expss)
+#install.packages("openxlsx")
+library(openxlsx)
+library(survey)
+library(sf)
+library(dplyr)
+```
+```{r message=FALSE, echo=T, warning=FALSE}
+df_2023 <- read_xpt("./LLCP2023.XPT")
+
+#variable.names(df_2023)
+
+df2_2023 <- df_2023 %>% select(`_STATE`,DISPCODE,LANDSEX2,GENHLTH,PHYSHLTH,`_PHYS14D`,
+                              MENTHLTH,`_MENT14D`,ADDEPEV3,DIABETE4,CNCRDIFF,
+                              ASTHMA3,`_LTASTH1`,`_MICHD`,CHCSCNC1,PRIMINS1,
+                              `_RACE`,`_RACEGR3`,`_PSU`,`_STSTR`,CHCOCNC1,
+                              `_STRWT`,`_LLCPWT`,`_LLCPWT2`,`_HISPANC`,`_RACE`,
+                              `_MRACE1`)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+str(df2_2023)
+```
+```{r message=FALSE, warning=FALSE, echo=T}
+
+df2_2023 <- clean_names(df2_2023) #Clean_names is a function from the janitor package that 
+                                  #allows us to clean variable or column names.
+
+#Let's look at the resulting names.
+names(df2_2023)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+#Here we are creating two new variables. the first indicates respondents that 
+#are Hispanic by their preferred race. The second will indicate non-hispanic 
+#respondents by race.
+
+df2_2023$racexhisp <- NA
+df2_2023$racexhisp[df2_2023$mrace1 == 1 & df2_2023$hispanc == 1] <- 1
+df2_2023$racexhisp[df2_2023$mrace1 == 2 & df2_2023$hispanc == 1] <- 2
+df2_2023$racexhisp[df2_2023$mrace1 == 3 & df2_2023$hispanc == 1] <- 3
+df2_2023$racexhisp[df2_2023$mrace1 == 4 & df2_2023$hispanc == 1] <- 4
+df2_2023$racexhisp[df2_2023$mrace1 == 5 & df2_2023$hispanc == 1] <- 5
+df2_2023$racexhisp[df2_2023$mrace1 == 6 & df2_2023$hispanc == 1] <- 6
+df2_2023$racexhisp[df2_2023$mrace1 == 7 & df2_2023$hispanc == 1] <- 7
+df2_2023$racexhisp[df2_2023$mrace1 == 77 & df2_2023$hispanc == 1] <- 8
+df2_2023$racexhisp[df2_2023$mrace1 == 99 & df2_2023$hispanc == 1] <- 9
+#Non Hispanic x race
+df2_2023$racexhisp[df2_2023$mrace1 == 1 & df2_2023$hispanc == 2] <- 10
+df2_2023$racexhisp[df2_2023$mrace1 == 2 & df2_2023$hispanc == 2] <- 11
+df2_2023$racexhisp[df2_2023$mrace1 == 3 & df2_2023$hispanc == 2] <- 12
+df2_2023$racexhisp[df2_2023$mrace1 == 4 & df2_2023$hispanc == 2] <- 13
+df2_2023$racexhisp[df2_2023$mrace1 == 5 & df2_2023$hispanc == 2] <- 14
+df2_2023$racexhisp[df2_2023$mrace1 == 6 & df2_2023$hispanc == 2] <- 15
+df2_2023$racexhisp[df2_2023$mrace1 == 7 & df2_2023$hispanc == 2] <- 16
+df2_2023$racexhisp[df2_2023$mrace1 == 77 & df2_2023$hispanc == 2] <- 17
+df2_2023$racexhisp[df2_2023$mrace1 == 99 & df2_2023$hispanc == 2] <- 18
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+df2_2023 = apply_labels(df2_2023,
+                        racexhisp = "Hispanic by Race",
+                        racexhisp = c("Hispanic White" = 1,
+                                     "Hispanic Black" = 2,
+                                     "Hispanic AIAN" = 3,
+                                     "Hispanic Asian" = 4,
+                                     "Hispanic NHPI" = 5,
+                                     "Hispanic Other" = 6,
+                                     "Hispanic Multirracial" = 7,
+                                     "Hispanic Not sure" = 8,
+                                     "Hispanic Refused" = 9,
+                                     "Non Hispanic White" = 10,
+                                     "Non Hispanic Black" = 11,
+                                     "Non Hispanic AIAN" = 12,
+                                     "Non Hispanic Asian" = 13,
+                                     "Non Hispanic NHPI" = 14,
+                                     "Non Hispanic Other" = 15,
+                                     "Non Hispanic Multirracial" = 16,
+                                     "Non Hispanic Not sure" = 17,
+                                     "Non HispanicRefused" = 18),
+                        genhlth = "General Health",
+                        genhlth = c("Excellent" = 1,
+                                    "Very Good" = 2,
+                                    "Good" = 3,
+                                    "Fair" = 4,
+                                    "Poor" = 5,
+                                    "Don't know" = 7,
+                                    "Refused" = 9),
+                        phys14d = "Physical Health",
+                        phys14d = c("Zero Days" = 1,
+                                    "1 to 13 Days" = 2,
+                                    "14+ Days" = 3,
+                                    "Don't know" = 9),
+                        addepev3 = "Mental Health",
+                        addepev3 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        ltasth1= "Asthma",
+                        ltasth1 = c("Yes" = 2,
+                                     "No" = 1,
+                                     "Don't know" = 9),
+                        diabete4 = "Diabetes",
+                        diabete4 = c("Yes" = 1,
+                                     "Yes,during pregnancy" = 2,
+                                     "No" = 3,
+                                     "Pre-diabetes" = 4,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        michd = "Heart disease",
+                        michd = c("Yes" = 1,
+                                  "No" = 2),
+                        CHCSCNC1 = "Skin cancer",
+                        CHCSCNC1 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        CHCOCNC1 = "Melanoma & Other types of cancer",
+                        CHCOCNC1 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        PRIMINS1 = "Health care coverage",
+                        PRIMINS1 = c("Employer or Union" = 1,
+                                     "Private Nongovernmental" = 2,
+                                     "Medicare" = 3, 
+                                     "Medigap" = 4,
+                                     "Medicaid" = 5, 
+                                     "CHIP" = 6, 
+                                     "Tricare" = 7, 
+                                     "Indian Health Service" = 8, 
+                                     "State" = 9, 
+                                     "Other goverment program" = 10, 
+                                     "No coverage" = 88,
+                                     "Don't know" = 77,
+                                     "Refused" = 99))
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+#Here we are filtering our data for the selected states.
+selc_state_df <- df2_2023 %>% filter(state == 12 | state == 36 | state == 72)
+
+#Let's re-code the State variable to include State Names and Not Fip Codes.
+selc_state_df$state2 <- fips(selc_state_df$state,to = 'Abbreviation')
+```
+
+```{r}
+selc_state_df %>% 
+  group_by(racexhisp, state2)%>%
+  summarise(count=n(),mean_wt=mean(llcpwt),sd_wt=sd(llcpwt),countxmeanwt=count*mean_wt)%>%
+  View()
+```
+
+
+```{r}
+#Let's create a table for hispanic population.
+multi_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt) %>%
+  set_caption("Total Population by Race and Ethnicity")
+```
+```{r}
+genhlth_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% genhlth,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("General Health among Respondents by Race and Ethnicity")
+
+genhlth_hisp
+```
+```{r}
+phyhlth_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% phys14d,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Physical Health of Hispanic Respondents by Race")
+
+phyhlth_hisp
+```
+```{r}
+addepev_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% addepev3,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Mental Health among Respondents by Race and Ethnicity")
+
+addepev_hisp
+```
+```{r}
+asthma_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% ltasth1,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Asthma among Respondents by Race and Ethnicity")
+
+asthma_hisp
+```
+```{r}
+diabete_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% diabete4,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Diabetes among Respondents by Race and Ethnicity")
+
+diabete_hisp
+```
+```{r}
+michd_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% michd,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Heart disease Among Respondents by Race and Ethnicity")
+
+michd_hisp
+```
+```{r}
+chcscnc1_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% chcscnc1,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Skin Cancer among Respondents by Race and Ethnicity")
+
+chcscnc1_hisp
+```
+```{r}
+chcocnc1_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% chcocnc1,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Other Types of Cancer among Respondents by Race and Ethnicity")
+
+chcocnc1_hisp
+```
+```{r}
+primins1_hisp = selc_state_df %>%
+  cross_cases(
+    cell_vars = state2 %nest% primins1,
+    col_vars = list(total(),racexhisp),
+    weight = llcpwt
+  ) %>%
+  set_caption("Health Care Coverage among Respondents by Race and Ethnicity")
+
+primins1_hisp
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+#We will create a new workbook.
+brfss_2023_hisp = createWorkbook()
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Multi_Hisp")
+xl_write(multi_hisp, #Table we want to add to sheet.
+         brfss_2023_hisp, #Workbook we are working on.
+         sh_hisp)    #Sheet we are working on.
+#Repeat previous procedure for each table
+
+#Now we will save our workbook to our computer as a Excel workbook.
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Genhlth_Multi")
+xl_write(genhlth_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Phyhlth_Multi")
+xl_write(phyhlth_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Mental_Multi")
+xl_write(addepev_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Asthma_Multi")
+xl_write(asthma_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Diabetes_Multi")
+xl_write(diabete_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Heart disease_Multi")
+xl_write(michd_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Skin cancer_Multi")
+xl_write(chcscnc1_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Other types of cancer_Multi")
+xl_write(chcocnc1_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+sh_hisp = addWorksheet(brfss_2023_hisp,"Health care coverage_Multi")
+xl_write(primins1_hisp,
+         brfss_2023_hisp, 
+         sh_hisp)    
+
+saveWorkbook(brfss_2023_hisp,"brfss_2023_hisp.xlsx", overwrite=T)
+```

@@ -1,0 +1,5052 @@
+---
+title: "BRFSS DATA SIGNIFICANCE COMP"
+author: "Verónica Díaz - Jorge R. Soldevila Irizarry"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## **Let's set up the library packages we might be using for our analysis**
+
+```{r message=FALSE, warning=FALSE, echo=T}
+library(tidyverse)
+library(haven)
+library(janitor)
+library(descriptio)
+library(weights)
+library(kableExtra)
+library(totalcensus)
+library(cdlTools)
+library(expss)
+library(openxlsx)
+library(survey)
+library(BSDA)
+library(broom)
+```
+
+## We will now read in and select the variables we will be using for this analysis for both 2016 and 2023
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2016 <- read_xpt("./LLCP2016.XPT") %>% select(`_STATE`,`_PSU`,`_STSTR`,
+                      `_LLCPWT`,`_HISPANC`,`_MRACE1`,GENHLTH,`_PHYS14D`,ADDEPEV2,
+                      `_LTASTH1`,DIABETE3,`_MICHD`,CHCSCNCR,CHCOCNCR,HLTHPLN1) %>% 
+  filter(`_STATE` == 72)
+
+```
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2023 <- read_xpt("./LLCP2023.XPT") %>% select(`_STATE`,`_PSU`,`_STSTR`,
+                      `_LLCPWT`,`_HISPANC`,`_MRACE1`,GENHLTH,`_PHYS14D`,
+                      ADDEPEV3,`_LTASTH1`,DIABETE4,`_MICHD`,CHCSCNC1,
+                      CHCOCNC1, `_HLTHPL1`) %>% 
+  filter(`_STATE` == 72) 
+```
+
+### Once we have read in our data we can clean some of the nomenclature to make reading the variables easier.
+
+#### To clean the variable names we are using the clean_names function.
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2016 <- clean_names(df_2016)
+df_2016$state <- fips(df_2016$state, to = 'Abbreviation')
+```
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2023 <- clean_names(df_2023)
+df_2023$state <- fips(df_2023$state, to = 'Abbreviation')
+```
+
+### Our analysis also considers the Fair and Poor responses to the general health variable as one response. To achieve this we will create a new general health variable that incorporates both responses.
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2016 <- df_2016 %>% mutate(genhlth2 = case_when(genhlth == 1 ~ 1,
+                                                   genhlth == 2 ~ 1,
+                                                   genhlth == 3 ~ 1,
+                                                   genhlth == 4 ~ 2,
+                                                   genhlth == 5 ~ 2,
+                                                   .default = genhlth))
+
+df_2016 <- df_2016 %>% mutate(diabetes = case_when(diabete3 == 1 ~ 1,
+                                                   diabete3 == 2 ~ 1,
+                                                   diabete3 == 3 ~ 2,
+                                                   .default = diabete3))
+```
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2023 <- df_2023 %>% mutate(genhlth2 = case_when(genhlth == 1 ~ 1,
+                                                   genhlth == 2 ~ 1,
+                                                   genhlth == 3 ~ 1,
+                                                   genhlth == 4 ~ 2,
+                                                   genhlth == 5 ~ 2,
+                                                   .default = genhlth))
+
+df_2023 <- df_2023 %>% mutate(diabetes = case_when(diabete4 == 1 ~ 1,
+                                                   diabete4 == 2 ~ 1,
+                                                   diabete4 == 3 ~ 2,
+                                                   .default = diabete4))
+```
+
+## For the purposes of our analysis we are interested in knowing the relationship between race and ethnicity. Because no such variable exists in the data set we will create our own.
+
+#### 2016
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2016$racexhisp <- NA
+df_2016$racexhisp[df_2016$mrace1 == 1 & df_2016$hispanc == 1] <- 1
+df_2016$racexhisp[df_2016$mrace1 == 2 & df_2016$hispanc == 1] <- 2
+df_2016$racexhisp[df_2016$mrace1 == 3 & df_2016$hispanc == 1] <- 3
+df_2016$racexhisp[df_2016$mrace1 == 4 & df_2016$hispanc == 1] <- 4
+df_2016$racexhisp[df_2016$mrace1 == 5 & df_2016$hispanc == 1] <- 5
+df_2016$racexhisp[df_2016$mrace1 == 6 & df_2016$hispanc == 1] <- 6
+df_2016$racexhisp[df_2016$mrace1 == 7 & df_2016$hispanc == 1] <- 7
+df_2016$racexhisp[df_2016$mrace1 == 77 & df_2016$hispanc == 1] <- 8
+df_2016$racexhisp[df_2016$mrace1 == 99 & df_2016$hispanc == 1] <- 9
+#Non Hispanic x race
+df_2016$racexhisp[df_2016$mrace1 == 1 & df_2016$hispanc == 2] <- 10
+df_2016$racexhisp[df_2016$mrace1 == 2 & df_2016$hispanc == 2] <- 11
+df_2016$racexhisp[df_2016$mrace1 == 3 & df_2016$hispanc == 2] <- 12
+df_2016$racexhisp[df_2016$mrace1 == 4 & df_2016$hispanc == 2] <- 13
+df_2016$racexhisp[df_2016$mrace1 == 5 & df_2016$hispanc == 2] <- 14
+df_2016$racexhisp[df_2016$mrace1 == 6 & df_2016$hispanc == 2] <- 15
+df_2016$racexhisp[df_2016$mrace1 == 7 & df_2016$hispanc == 2] <- 16
+df_2016$racexhisp[df_2016$mrace1 == 77 & df_2016$hispanc == 2] <- 17
+df_2016$racexhisp[df_2016$mrace1 == 99 & df_2016$hispanc == 2] <- 18
+```
+
+#### 2023
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2023$racexhisp <- NA
+df_2023$racexhisp[df_2023$mrace1 == 1 & df_2023$hispanc == 1] <- 1
+df_2023$racexhisp[df_2023$mrace1 == 2 & df_2023$hispanc == 1] <- 2
+df_2023$racexhisp[df_2023$mrace1 == 3 & df_2023$hispanc == 1] <- 3
+df_2023$racexhisp[df_2023$mrace1 == 4 & df_2023$hispanc == 1] <- 4
+df_2023$racexhisp[df_2023$mrace1 == 5 & df_2023$hispanc == 1] <- 5
+df_2023$racexhisp[df_2023$mrace1 == 6 & df_2023$hispanc == 1] <- 6
+df_2023$racexhisp[df_2023$mrace1 == 7 & df_2023$hispanc == 1] <- 7
+df_2023$racexhisp[df_2023$mrace1 == 77 & df_2023$hispanc == 1] <- 8
+df_2023$racexhisp[df_2023$mrace1 == 99 & df_2023$hispanc == 1] <- 9
+#Non Hispanic x race
+df_2023$racexhisp[df_2023$mrace1 == 1 & df_2023$hispanc == 2] <- 10
+df_2023$racexhisp[df_2023$mrace1 == 2 & df_2023$hispanc == 2] <- 11
+df_2023$racexhisp[df_2023$mrace1 == 3 & df_2023$hispanc == 2] <- 12
+df_2023$racexhisp[df_2023$mrace1 == 4 & df_2023$hispanc == 2] <- 13
+df_2023$racexhisp[df_2023$mrace1 == 5 & df_2023$hispanc == 2] <- 14
+df_2023$racexhisp[df_2023$mrace1 == 6 & df_2023$hispanc == 2] <- 15
+df_2023$racexhisp[df_2023$mrace1 == 7 & df_2023$hispanc == 2] <- 16
+df_2023$racexhisp[df_2023$mrace1 == 77 & df_2023$hispanc == 2] <- 17
+df_2023$racexhisp[df_2023$mrace1 == 99 & df_2023$hispanc == 2] <- 18
+
+```
+
+### Let's give our new variable labels and convert it to factor so that we can perform statistical analysis on it.
+
+#### 2016
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2016 = apply_labels(df_2016,
+                        racexhisp = "Hispanic by Race",
+                        racexhisp = c("Hispanic White" = 1,
+                                     "Hispanic Black" = 2,
+                                     "Hispanic AIAN" = 3,
+                                     "Hispanic Asian" = 4,
+                                     "Hispanic NHPI" = 5,
+                                     "Hispanic Other" = 6,
+                                     "Hispanic Multirracial" = 7,
+                                     "Hispanic Not Sure" = 8,
+                                     "Hispanic Refused" = 9,
+                                     "Non Hispanic White" = 10,
+                                     "Non Hispanic Black" = 11,
+                                     "Non Hispanic AIAN" = 12,
+                                     "Non Hispanic Asian" = 13,
+                                     "Non Hispanic NHPI" = 14,
+                                     "Non Hispanic Other" = 15,
+                                     "Non Hispanic Multirracial" = 16,
+                                     "Non Hispanic Not Sure" = 17,
+                                     "Non Hispanic Refused" = 18),
+                       genhlth = "General Health",
+                        genhlth = c("Excellent" = 1,
+                                    "Very Good" = 2,
+                                    "Good" = 3,
+                                    "Fair" = 4,
+                                    "Poor" = 5,
+                                    "Don't know" = 7,
+                                    "Refused" = 9),
+                        genhlth2 = "General Health",
+                        genhlth2 = c("Good" = 1,
+                                    "Fair/Poor" = 4,
+                                    "Don't know" = 7,
+                                    "Refused" = 9),
+                        phys14d = "Physical Health",
+                        phys14d = c("Zero Days" = 1,
+                                    "1 to 13 Days" = 2,
+                                    "14+ Days" = 3,
+                                    "Don't know" = 9),
+                        addepev2 = "Mental Health",
+                        addepev2 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        ltasth1 = "Asthma",
+                        ltasth1 = c("No" = 1,
+                                     "Yes" = 2,
+                                     "Don't know" = 7),
+                        diabete3 = "Diabetes",
+                        diabete3 = c("Yes" = 1,
+                                     "Yes,during pregnancy" = 2,
+                                     "No" = 3,
+                                     "Pre-diabetes" = 4,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                       diabetes = "Diabetes",
+                       diabetes = c("Yes" = 1,
+                                    "No" = 2,
+                                    "Don't know" = 7,
+                                     "Refused" = 9),
+                        michd = "Heart disease",
+                        michd = c("Yes" = 1,
+                                  "No" = 2),
+                        chcscncr = "Skin cancer",
+                        chcscncr = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        chcocncr = "Other types of cancer",
+                        chcocncr = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        hlthpln1 = "Health care coverage",
+                        hlthpln1 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9))
+
+df_2016$racexhisp <- as.factor(df_2016$racexhisp)
+df_2016$genhlth2 <- as.factor(df_2016$genhlth2)
+df_2016$genhlth <- as.factor(df_2016$genhlth)
+df_2016$addepev2 <- as.factor(df_2016$addepev2)
+df_2016$ltasth1 <- as.factor(df_2016$ltasth1)
+df_2016$diabete3 <- as.factor(df_2016$diabete3)
+df_2016$diabetes <- as.factor(df_2016$diabetes)
+df_2016$michd <- as.factor(df_2016$michd)
+df_2016$chcscncr <- as.factor(df_2016$chcscncr)
+df_2016$chcocncr <- as.factor(df_2016$chcocncr)
+df_2016$hlthpln1 <- as.factor(df_2016$hlthpln1)
+```
+
+#### 2023
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2023 = apply_labels(df_2023,
+                        racexhisp = "Hispanic by Race",
+                        racexhisp = c("Hispanic White" = 1,
+                                     "Hispanic Black" = 2,
+                                     "Hispanic AIAN" = 3,
+                                     "Hispanic Asian" = 4,
+                                     "Hispanic NHPI" = 5,
+                                     "Hispanic Other" = 6,
+                                     "Hispanic Multirracial" = 7,
+                                     "Hispanic Not Sure" = 8,
+                                     "Hispanic Refused" = 9,
+                                     "Non Hispanic White" = 10,
+                                     "Non Hispanic Black" = 11,
+                                     "Non Hispanic AIAN" = 12,
+                                     "Non Hispanic Asian" = 13,
+                                     "Non Hispanic NHPI" = 14,
+                                     "Non Hispanic Other" = 15,
+                                     "Non Hispanic Multirracial" = 16,
+                                     "Non Hispanic Not Sure" = 17,
+                                     "Non Hispanic Refused" = 18),
+                        genhlth = "General Health",
+                        genhlth = c("Excellent" = 1,
+                                    "Very Good" = 2,
+                                    "Good" = 3,
+                                    "Fair" = 4,
+                                    "Poor" = 5,
+                                    "Don't know" = 7,
+                                    "Refused" = 9),
+                        genhlth2 = "General Health",
+                        genhlth2 = c("Good" = 1,
+                                    "Fair/Poor" = 4,
+                                    "Don't know" = 7,
+                                    "Refused" = 9),
+                        phys14d = "Physical Health",
+                        phys14d = c("Zero Days" = 1,
+                                    "1 to 13 Days" = 2,
+                                    "14+ Days" = 3,
+                                    "Don't know" = 9),
+                        addepev3 = "Mental Health",
+                        addepev3 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        ltasth1 = "Asthma",
+                        ltasth1 = c("No" = 1,
+                                     "Yes" = 2,
+                                     "Don't know" = 7),
+                        diabete4 = "Diabetes",
+                        diabete4 = c("Yes" = 1,
+                                     "Yes,during pregnancy" = 2,
+                                     "No" = 3,
+                                     "Pre-diabetes" = 4,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                       diabetes = "Diabetes",
+                       diabetes = c("Yes" = 1,
+                                    "No" = 2,
+                                    "Don't know" = 7,
+                                     "Refused" = 9),
+                        michd = "Heart disease",
+                        michd = c("Yes" = 1,
+                                  "No" = 2),
+                        chcscnc1 = "Skin cancer",
+                        chcscnc1 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        chcocnc1 = "Other types of cancer",
+                        chcocnc1 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9),
+                        hlthpl1 = "Health care coverage",
+                        hlthpl1 = c("Yes" = 1,
+                                     "No" = 2,
+                                     "Don't know" = 7,
+                                     "Refused" = 9))
+
+df_2023$racexhisp <- as.factor(df_2023$racexhisp)
+df_2023$genhlth2 <- as.factor(df_2023$genhlth2)
+df_2023$genhlth <- as.factor(df_2023$genhlth)
+df_2023$addepev3 <- as.factor(df_2023$addepev3)
+df_2023$ltasth1 <- as.factor(df_2023$ltasth1)
+df_2023$diabete4 <- as.factor(df_2023$diabete4)
+df_2023$diabetes <- as.factor(df_2023$diabetes)
+df_2023$michd <- as.factor(df_2023$michd)
+df_2023$chcscnc1 <- as.factor(df_2023$chcscnc1)
+df_2023$chcocnc1 <- as.factor(df_2023$chcocnc1)
+df_2023$hlthpl1 <- as.factor(df_2023$hlthpl1)
+```
+
+## To perform statistical analysis we will use the functions within the survey package.
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+#Remove scientific notation
+options(scipen = 999)
+```
+
+### First we create our design objects to analyze the survey data.
+
+#### 2016
+
+```{r}
+dsgn_2016 <- svydesign(id = ~ psu,
+                       weights = ~llcpwt,
+                       strata = ~ ststr, 
+                       nest = TRUE,    
+                       survey.lonely.psu = "adjust",  
+                       data = df_2016)
+```
+
+#### 2023
+
+```{r}
+dsgn_2023 <- svydesign(id = ~ psu,
+                       weights = ~llcpwt,
+                       strata = ~ ststr,
+                       nest = TRUE,  
+                       survey.lonely.psu = "adjust", 
+                       data = df_2023) 
+options(survey.lonely.psu="adjust")
+```
+
+## Now we can calculate the mean by state and the confidence intervals.
+
+### First we calculate the means by race/ethnicity and health category for both 2016 and 2023.
+
+#### 2016
+
+```{r}
+genhlth_mean_2016 <- svyby(~genhlth, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+genhlth2_mean_2016 <- svyby(~genhlth2, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+addepev2_mean_2016 <- svyby(~addepev2, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+ltasth1_mean_2016 <- svyby(~ltasth1, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+diabete3_mean_2016 <- svyby(~diabete3, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+diabetes_mean_2016 <- svyby(~diabetes, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+michd_mean_2016 <- svyby(~michd, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+chcscncr_mean_2016 <- svyby(~chcscncr, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+chcocncr_mean_2016 <- svyby(~chcocncr, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+hlthpln1_mean_2016 <- svyby(~hlthpln1, ~racexhisp, dsgn_2016, svymean, na.rm = TRUE)
+
+mean_2016_list <- list("GenHlth" = genhlth_mean_2016,"GenHlth2"=genhlth2_mean_2016,
+                       "MentHlth" = addepev2_mean_2016,"Asthma"=ltasth1_mean_2016,
+                       "Diabete" = diabete3_mean_2016,"Diabete2"= diabetes_mean_2016,
+                       "SknCan"= chcscncr_mean_2016,
+                       "OthCan" = chcocncr_mean_2016,"Hlthpln"=hlthpln1_mean_2016)
+
+write.xlsx(mean_2016_list, "mean_2016_list.xlsx")
+
+#grouped_health_means_2016 <- svyby(~genhlth+genhlth2+addepev2+ltasth1+diabete3+diabetes+michd+chcscncr+chcocncr+hlthpln1,~racexhisp,dsgn_2016,svymean,na.rm = TRUE) 
+#print(grouped_means_2016)  
+
+#gnhlth_mean_2016 <- svyby(~genhlth, ~racexhisp,dsgn_2016,svymean,na.rm= TRUE)
+
+#conf_intervals_2016 <- as.data.frame(confint(grouped_health_means_2016, level = 0.95)) 
+#print(conf_intervals_2016)
+```
+
+```{r}
+#write.csv(grouped_health_means_2016,"grouped_health_means_2016.csv")
+#write.csv(conf_intervals_2016, "conint_health_2016.csv")
+```
+
+```{r}
+#genhlth_total_2016 <- svyby(~genhlth+genhlth2+addepev2+ltasth1+diabete3+
+#                              michd+chcscncr+chcocncr+hlthpln1,~racexhisp,dsgn_2016,svytotal,na.rm = TRUE) 
+##write.csv(genhlth_total_2016,"genhlth_total_2016.csv")
+```
+
+#### 2023
+
+```{r}
+genhlth_mean_2023 <- svyby(~genhlth, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+genhlth2_mean_2023 <- svyby(~genhlth2, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+addepev3_mean_2023 <- svyby(~addepev3, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+ltasth1_mean_2023 <- svyby(~ltasth1, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+diabete4_mean_2023 <- svyby(~diabete4, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+diabetes_mean_2023 <- svyby(~diabetes, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+michd_mean_2023 <- svyby(~michd, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+chcscnc1_mean_2023 <- svyby(~chcscnc1, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+chcocnc1_mean_2023 <- svyby(~chcocnc1, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+hlthpl1_mean_2023 <- svyby(~hlthpl1, ~racexhisp, dsgn_2023, svymean, na.rm = TRUE)
+
+mean_2023_list <- list("GenHlth" = genhlth_mean_2023,"GenHlth2"=genhlth2_mean_2023,
+                       "MentHlth" = addepev3_mean_2023,"Asthma"=ltasth1_mean_2023,
+                       "Diabete" = diabete4_mean_2023,"Diabete2"= diabetes_mean_2023,
+                       "SknCan"= chcscnc1_mean_2023,
+                       "OthCan" = chcocnc1_mean_2023,"Hlthpln"=hlthpl1_mean_2023)
+
+write.xlsx(mean_2023_list, "mean_2023_list.xlsx")
+
+#grouped_health_means_2023 <- svyby(~genhlth+genhlth2+addepev3+ltasth1+diabete4+diabetes+michd+chcscnc1+chcocnc1+hlthpl1,~racexhisp,dsgn_2023,svymean,na.rm = TRUE) 
+#print(grouped_means_2023)  
+
+#conf_intervals_2023 <- as.data.frame(confint(grouped_health_means_2023, level = 0.95)) 
+#print(conf_intervals_2023)
+```
+
+```{r}
+#write.csv(grouped_health_means_2023,"grouped_health_means_2023.csv")
+#write.csv(conf_intervals_2023, "conint_health_2023.csv")
+```
+
+## Testing for significance differences between 2016 and 2023
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2023 <- df_2023 %>%
+  rename(addepev2 = addepev3, 
+         diabete3 = diabete4,
+         chcscncr = chcscnc1,
+         chcocncr = chcocnc1,
+         hlthpln1 = hlthpl1)
+```
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_2016$year <- factor(2016)
+df_2023$year <- factor(2023)
+
+df_combined <- rbind(df_2016, df_2023) 
+
+df_combined$genhlth <- as.factor(df_combined$genhlth)
+df_combined$genhlth2 <- as.factor(df_combined$genhlth2)
+df_combined$phys14d <- as.factor(df_combined$phys14d)
+df_combined$addepev2 <- as.factor(df_combined$addepev2)
+df_combined$ltasth1<- as.factor(df_combined$ltasth1)
+df_combined$diabete3 <- as.factor(df_combined$diabete3)
+df_combined$michd <- as.factor(df_combined$michd)
+df_combined$chcscncr <- as.factor(df_combined$chcscncr)
+df_combined$chcocncr <- as.factor(df_combined$chcocncr)
+df_combined$hlthpln1 <- as.factor(df_combined$hlthpln1)
+
+df_comb_dsgn <- svydesign(id = ~psu,
+                          strata = ~interaction(ststr, year),
+                          weights = ~llcpwt,
+                          data = df_combined,
+                          nest = TRUE)
+```
+
+## T-test
+
+### Race/Ethnicity categories
+
+The race and ethnicity category needs some additional analysis because we are interested in totals based on Hispanic Pop and Non Hispanic Pop separates.
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+df_comb_dsgn_hisp <- df_comb_dsgn %>% 
+  subset(hispanc == 1)
+
+response_levels <- levels(df_comb_dsgn_hisp$variables$racexhisp)
+result_list <- list()
+
+for (level in response_levels) {
+  formula_str <- paste0("I(racexhisp == \"", level,"\") ~ factor(year)")
+  formula_obj <- as.formula(formula_str)
+  test_result <- svyttest(formula_obj, df_comb_dsgn)
+  result_list[[level]] <- data.frame(
+    race = level,
+    t_stat = test_result$statistic,
+    p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL
+  )
+}
+
+#result_list[["Hispanic Black"]]
+
+df_ttest_hisp <- bind_rows(result_list)
+##write.csv(df_ttest,"df_ttest.csv")
+```
+
+### General Health T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$genhlth)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_gnhlth <- bind_rows(result_list)
+##write.csv(h_w_gnhlth,"h_w_gnhlth_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_genhlth <- bind_rows(result_list)
+#write.csv(h_b_genhlth,"h_b_genhlth_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_genhlth <- bind_rows(result_list)
+##write.csv(h_aian_genhlth,"h_aian_genhlth_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_genhlth <- bind_rows(result_list)
+##write.csv(h_as_genhlth,"h_as_genhlth_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_genhlth <- bind_rows(result_list)
+##write.csv(h_nhpi_genhlth,"h_nhpi_genhlth_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_genhlth <- bind_rows(result_list)
+##write.csv(h_oth_genhlth,"h_oth_genhlth_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_genhlth <- bind_rows(result_list)
+##write.csv(h_multi_genhlth,"h_multi_genhlth_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_genhlth <- bind_rows(result_list)
+##write.csv(h_nsure_genhlth,"h_nsure_genhlth_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_genhlth <- bind_rows(result_list)
+##write.csv(h_ref_genhlth,"h_ref_genhlth_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_genhlth <- bind_rows(result_list)
+##write.csv(nh_w_genhlth,"nh_w_genhlth_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_genhlth <- bind_rows(result_list)
+##write.csv(nh_b_genhlth,"nh_b_genhlth_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_genhlth <- bind_rows(result_list)
+##write.csv(nh_aian_genhlth,"nh_aian_genhlth_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_genhlth <- bind_rows(result_list)
+##write.csv(nh_as_genhlth,"nh_as_genhlth_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_genhlth <- bind_rows(result_list)
+##write.csv(nh_nhpi_genhlth,"nh_nhpi_genhlth_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_genhlth <- bind_rows(result_list)
+##write.csv(nh_oth_genhlth,"nh_oth_genhlth_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_genhlth <- bind_rows(result_list)
+###write.csv(nh_multi_genhlth,"nh_multi_genhlth_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_genhlth <- bind_rows(result_list)
+##write.csv(nh_ns_genhlth,"nh_ns_genhlth_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(genhlth == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_genhlth <- bind_rows(result_list)
+##write.csv(nh_ref_genhlth,"nh_ref_genhlth_pr.csv")
+```
+
+```{r}
+genhlth_ttest <- bind_rows(h_w_gnhlth,h_b_genhlth,h_aian_genhlth,#h_as_genhlth,
+                       #h_nhpi_genhlth,
+                       h_oth_genhlth, h_multi_genhlth,
+                       h_oth_genhlth,h_nsure_genhlth,h_ref_genhlth,
+                       nh_w_genhlth,nh_b_genhlth,#nh_aian_genhlth,
+                       #nh_as_genhlth,
+                       #nh_nhpi_genhlth, 
+                       nh_oth_genhlth, nh_multi_genhlth,
+                       #nh_nsure_genhlth,
+                       #nh_ref_genhlth
+                       )
+```
+
+
+### General Health 2 T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$genhlth2)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_genhlth2 <- bind_rows(result_list)
+#write.csv(h_w_genhlth2,"h_w_genhlth2_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_genhlth2 <- bind_rows(result_list)
+#write.csv(h_b_genhlth2,"h_b_genhlth2_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_genhlth2 <- bind_rows(result_list)
+#write.csv(h_aian_genhlth2,"h_aian_genhlth2_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_genhlth2 <- bind_rows(result_list)
+#write.csv(h_as_genhlth2,"h_as_genhlth2_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_genhlth2 <- bind_rows(result_list)
+#write.csv(h_nhpi_genhlth2,"h_nhpi_genhlth2_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_genhlth2 <- bind_rows(result_list)
+#write.csv(h_oth_genhlth2,"h_oth_genhlth2_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_genhlth2 <- bind_rows(result_list)
+#write.csv(h_multi_genhlth2,"h_multi_genhlth2_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_genhlth2 <- bind_rows(result_list)
+#write.csv(h_nsure_genhlth2,"h_nsure_genhlth2_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_genhlth2 <- bind_rows(result_list)
+#write.csv(h_ref_genhlth2,"h_ref_genhlth2_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_w_genhlth2,"nh_w_genhlth2_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_b_genhlth2,"nh_b_genhlth2_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_aian_genhlth2,"nh_aian_genhlth2_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_as_genhlth2,"nh_as_genhlth2_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_nhpi_genhlth2,"nh_nhpi_genhlth2_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_oth_genhlth2,"nh_oth_genhlth2_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_multi_genhlth2,"nh_multi_genhlth2_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_ns_genhlth2,"nh_ns_genhlth2_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(genhlth2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_genhlth2 <- bind_rows(result_list)
+#write.csv(nh_ref_genhlth2,"nh_ref_genhlth2_pr.csv")
+```
+
+```{r}
+genhlth2_ttest <- bind_rows(h_w_genhlth2,h_b_genhlth2,h_aian_genhlth2,#h_as_genhlth2,
+                       #h_nhpi_genhlth2,
+                       h_oth_genhlth2, h_multi_genhlth2,
+                       h_oth_genhlth2,h_nsure_genhlth2,h_ref_genhlth2,
+                       nh_w_genhlth2,nh_b_genhlth2,#nh_aian_genhlth2,
+                       #nh_as_genhlth2,
+                       #nh_nhpi_genhlth2, 
+                       nh_oth_genhlth2, nh_multi_genhlth2,
+                       #nh_nsure_genhlth2,
+                       #nh_ref_genhlth2
+                       )
+```
+
+
+### Mental Health T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$addepev2)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_addepev2 <- bind_rows(result_list)
+#write.csv(h_w_addepev2,"h_w_addepev2_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_addepev2 <- bind_rows(result_list)
+#write.csv(h_b_addepev2,"h_b_addepev2_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_addepev2 <- bind_rows(result_list)
+#write.csv(h_aian_addepev2,"h_aian_addepev2_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_addepev2 <- bind_rows(result_list)
+#write.csv(h_as_addepev2,"h_as_addepev2_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_addepev2 <- bind_rows(result_list)
+#write.csv(h_nhpi_addepev2,"h_nhpi_addepev2_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_addepev2 <- bind_rows(result_list)
+#write.csv(h_oth_addepev2,"h_oth_addepev2_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_addepev2 <- bind_rows(result_list)
+#write.csv(h_multi_addepev2,"h_multi_addepev2_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_addepev2 <- bind_rows(result_list)
+#write.csv(h_nsure_addepev2,"h_nsure_addepev2_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_addepev2 <- bind_rows(result_list)
+#write.csv(h_ref_addepev2,"h_ref_addepev2_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_addepev2 <- bind_rows(result_list)
+#write.csv(nh_w_addepev2,"nh_w_addepev2_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_addepev2 <- bind_rows(result_list)
+#write.csv(nh_b_addepev2,"nh_b_addepev2_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_addepev2 <- bind_rows(result_list)
+#write.csv(nh_aian_addepev2,"nh_aian_addepev2_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_addepev2 <- bind_rows(result_list)
+#write.csv(nh_as_addepev2,"nh_as_addepev2_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_addepev2 <- bind_rows(result_list)
+#write.csv(nh_nhpi_addepev2,"nh_nhpi_addepev2_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_addepev2 <- bind_rows(result_list)
+#write.csv(nh_oth_addepev2,"nh_oth_addepev2_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_addepev2 <- bind_rows(result_list)
+#write.csv(nh_multi_addepev2,"nh_multi_addepev2_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_addepev2 <- bind_rows(result_list)
+#write.csv(nh_ns_addepev2,"nh_ns_addepev2_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(addepev2 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_addepev2 <- bind_rows(result_list)
+#write.csv(nh_ref_addepev2,"nh_ref_addepev2_pr.csv")
+```
+
+```{r}
+addepev2_ttest <- bind_rows(h_w_addepev2,h_b_addepev2,#h_aian_addepev2,#h_as_addepev2,
+                       #h_nhpi_addepev2,
+                       h_oth_addepev2, h_multi_addepev2,
+                       h_oth_addepev2,h_nsure_addepev2,h_ref_addepev2,
+                       nh_w_addepev2,nh_b_addepev2,#nh_aian_addepev2,
+                       #nh_as_addepev2,
+                       #nh_nhpi_addepev2,
+                       nh_oth_addepev2, nh_multi_addepev2,
+                       #nh_nsure_addepev2,
+                       #nh_ref_addepev2
+                       )
+```
+
+
+### Diabetes T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+response_levels <- levels(df_comb_dsgn$variables$diabete3)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_diabete3 <- bind_rows(result_list)
+#write.csv(h_w_diabete3,"h_w_diabete3_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_diabete3 <- bind_rows(result_list)
+#write.csv(h_b_diabete3,"h_b_diabete3_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_diabete3 <- bind_rows(result_list)
+#write.csv(h_aian_diabete3,"h_aian_diabete3_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_diabete3 <- bind_rows(result_list)
+#write.csv(h_as_diabete3,"h_as_diabete3_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_diabete3 <- bind_rows(result_list)
+#write.csv(h_nhpi_diabete3,"h_nhpi_diabete3_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_diabete3 <- bind_rows(result_list)
+#write.csv(h_oth_diabete3,"h_oth_diabete3_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_diabete3 <- bind_rows(result_list)
+#write.csv(h_multi_diabete3,"h_multi_diabete3_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_diabete3 <- bind_rows(result_list)
+#write.csv(h_nsure_diabete3,"h_nsure_diabete3_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_diabete3 <- bind_rows(result_list)
+#write.csv(h_ref_diabete3,"h_ref_diabete3_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_diabete3 <- bind_rows(result_list)
+#write.csv(nh_w_diabete3,"nh_w_diabete3_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_diabete3 <- bind_rows(result_list)
+#write.csv(nh_b_diabete3,"nh_b_diabete3_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_diabete3 <- bind_rows(result_list)
+#write.csv(nh_aian_diabete3,"nh_aian_diabete3_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_diabete3 <- bind_rows(result_list)
+#write.csv(nh_as_diabete3,"nh_as_diabete3_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_diabete3 <- bind_rows(result_list)
+#write.csv(nh_nhpi_diabete3,"nh_nhpi_diabete3_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_diabete3 <- bind_rows(result_list)
+#write.csv(nh_oth_diabete3,"nh_oth_diabete3_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_diabete3 <- bind_rows(result_list)
+#write.csv(nh_multi_diabete3,"nh_multi_diabete3_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_diabete3 <- bind_rows(result_list)
+#write.csv(nh_ns_diabete3,"nh_ns_diabete3_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(diabete3 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_diabete3 <- bind_rows(result_list)
+#write.csv(nh_ref_diabete3,"nh_ref_diabete3_pr.csv")
+```
+
+```{r}
+diabete3_ttest <- bind_rows(h_w_diabete3,h_b_diabete3,h_aian_diabete3,#h_as_diabete3,
+                       #h_nhpi_diabete3,
+                       h_oth_diabete3, h_multi_diabete3,
+                       h_oth_diabete3,h_nsure_diabete3,h_ref_diabete3,
+                       nh_w_diabete3,nh_b_diabete3,#nh_aian_diabete3,
+                       #nh_as_diabete3,
+                       #nh_nhpi_diabete3,
+                       nh_oth_diabete3, nh_multi_diabete3,
+                       #nh_nsure_diabete3,
+                       #nh_ref_diabete3
+                       ) 
+```
+
+
+### Diabetes2 T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+response_levels <- levels(df_comb_dsgn$variables$diabetes)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_diabetes <- bind_rows(result_list)
+#write.csv(h_w_diabetes,"h_w_diabetes_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_diabetes <- bind_rows(result_list)
+#write.csv(h_b_diabetes,"h_b_diabetes_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_diabetes <- bind_rows(result_list)
+#write.csv(h_aian_diabetes,"h_aian_diabetes_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_diabetes <- bind_rows(result_list)
+#write.csv(h_as_diabetes,"h_as_diabetes_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_diabetes <- bind_rows(result_list)
+#write.csv(h_nhpi_diabetes,"h_nhpi_diabetes_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_diabetes <- bind_rows(result_list)
+#write.csv(h_oth_diabetes,"h_oth_diabetes_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_diabetes <- bind_rows(result_list)
+#write.csv(h_multi_diabetes,"h_multi_diabetes_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_diabetes <- bind_rows(result_list)
+#write.csv(h_nsure_diabetes,"h_nsure_diabetes_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_diabetes <- bind_rows(result_list)
+#write.csv(h_ref_diabetes,"h_ref_diabetes_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_diabetes <- bind_rows(result_list)
+#write.csv(nh_w_diabetes,"nh_w_diabetes_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_diabetes <- bind_rows(result_list)
+#write.csv(nh_b_diabetes,"nh_b_diabetes_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_diabetes <- bind_rows(result_list)
+#write.csv(nh_aian_diabetes,"nh_aian_diabetes_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_diabetes <- bind_rows(result_list)
+#write.csv(nh_as_diabetes,"nh_as_diabetes_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_diabetes <- bind_rows(result_list)
+#write.csv(nh_nhpi_diabetes,"nh_nhpi_diabetes_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_diabetes <- bind_rows(result_list)
+#write.csv(nh_oth_diabetes,"nh_oth_diabetes_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_diabetes <- bind_rows(result_list)
+#write.csv(nh_multi_diabetes,"nh_multi_diabetes_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_diabetes <- bind_rows(result_list)
+#write.csv(nh_ns_diabetes,"nh_ns_diabetes_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(diabetes == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_diabetes <- bind_rows(result_list)
+#write.csv(nh_ref_diabetes,"nh_ref_diabetes_pr.csv")
+```
+
+```{r}
+diabete2_ttest <- bind_rows(h_w_diabetes,h_b_diabetes,h_aian_diabetes,#h_as_diabetes,
+                       #h_nhpi_diabetes,
+                       h_oth_diabetes, h_multi_diabetes,
+                       h_oth_diabetes,h_nsure_diabetes,h_ref_diabetes,
+                       nh_w_diabetes,nh_b_diabetes,#nh_aian_diabetes,
+                       #nh_as_diabetes,
+                       #nh_nhpi_diabetes,
+                       nh_oth_diabetes, nh_multi_diabetes,
+                       #nh_nsure_diabetes,
+                       #nh_ref_diabetes
+                       ) 
+```
+
+
+### Asthma T-Test by Race/Ethnicity and by State
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$ltasth1)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_ltasth1 <- bind_rows(result_list)
+#write.csv(h_w_ltasth1,"h_w_ltasth1_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_ltasth1 <- bind_rows(result_list)
+#write.csv(h_b_ltasth1,"h_b_ltasth1_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_ltasth1 <- bind_rows(result_list)
+#write.csv(h_aian_ltasth1,"h_aian_ltasth1_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_ltasth1 <- bind_rows(result_list)
+#write.csv(h_as_ltasth1,"h_as_ltasth1_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_ltasth1 <- bind_rows(result_list)
+#write.csv(h_nhpi_ltasth1,"h_nhpi_ltasth1_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_ltasth1 <- bind_rows(result_list)
+#write.csv(h_oth_ltasth1,"h_oth_ltasth1_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_ltasth1 <- bind_rows(result_list)
+#write.csv(h_multi_ltasth1,"h_multi_ltasth1_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_ltasth1 <- bind_rows(result_list)
+#write.csv(h_nsure_ltasth1,"h_nsure_ltasth1_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_ltasth1 <- bind_rows(result_list)
+#write.csv(h_ref_ltasth1,"h_ref_ltasth1_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_w_ltasth1,"nh_w_ltasth1_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_b_ltasth1,"nh_b_ltasth1_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_aian_ltasth1,"nh_aian_ltasth1_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_as_ltasth1,"nh_as_ltasth1_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_nhpi_ltasth1,"nh_nhpi_ltasth1_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_oth_ltasth1,"nh_oth_ltasth1_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_multi_ltasth1,"nh_multi_ltasth1_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_ns_ltasth1,"nh_ns_ltasth1_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(ltasth1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_ltasth1 <- bind_rows(result_list)
+#write.csv(nh_ref_ltasth1,"nh_ref_ltasth1_pr.csv")
+```
+
+```{r}
+ltasth1_ttest <- bind_rows(h_w_ltasth1,h_b_ltasth1,h_aian_ltasth1,#h_as_ltasth1,
+                       #h_nhpi_ltasth1,
+                       h_oth_ltasth1, h_multi_ltasth1,
+                       h_oth_ltasth1,h_nsure_ltasth1,h_ref_ltasth1,
+                       nh_w_ltasth1,nh_b_ltasth1,#nh_aian_ltasth1,
+                       #nh_as_ltasth1,
+                       #nh_nhpi_ltasth1,
+                       nh_oth_ltasth1, nh_multi_ltasth1,
+                       #nh_nsure_ltasth1,
+                       #nh_ref_ltasth1
+                       )
+```
+
+
+### Heart Disease T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$michd)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_michd <- bind_rows(result_list)
+#write.csv(h_w_michd,"h_w_michd_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_michd <- bind_rows(result_list)
+#write.csv(h_b_michd,"h_b_michd_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_michd <- bind_rows(result_list)
+#write.csv(h_aian_michd,"h_aian_michd_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_michd <- bind_rows(result_list)
+#write.csv(h_as_michd,"h_as_michd_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_michd <- bind_rows(result_list)
+#write.csv(h_nhpi_michd,"h_nhpi_michd_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_michd <- bind_rows(result_list)
+#write.csv(h_oth_michd,"h_oth_michd_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_michd <- bind_rows(result_list)
+#write.csv(h_multi_michd,"h_multi_michd_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_michd <- bind_rows(result_list)
+#write.csv(h_nsure_michd,"h_nsure_michd_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_michd <- bind_rows(result_list)
+#write.csv(h_ref_michd,"h_ref_michd_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_michd <- bind_rows(result_list)
+#write.csv(nh_w_michd,"nh_w_michd_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_michd <- bind_rows(result_list)
+#write.csv(nh_b_michd,"nh_b_michd_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_michd <- bind_rows(result_list)
+#write.csv(nh_aian_michd,"nh_aian_michd_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_michd <- bind_rows(result_list)
+#write.csv(nh_as_michd,"nh_as_michd_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_michd <- bind_rows(result_list)
+#write.csv(nh_nhpi_michd,"nh_nhpi_michd_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_michd <- bind_rows(result_list)
+#write.csv(nh_oth_michd,"nh_oth_michd_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_michd <- bind_rows(result_list)
+#write.csv(nh_multi_michd,"nh_multi_michd_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_michd <- bind_rows(result_list)
+#write.csv(nh_ns_michd,"nh_ns_michd_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(michd == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_michd <- bind_rows(result_list)
+#write.csv(nh_ref_michd,"nh_ref_michd_pr.csv")
+```
+
+```{r}
+michd_ttest <- bind_rows(h_w_michd,h_b_michd,h_aian_michd,#h_as_michd,
+                       #h_nhpi_michd,
+                       h_oth_michd, h_multi_michd,
+                       h_oth_michd,h_nsure_michd,h_ref_michd,
+                       nh_w_michd,nh_b_michd,#nh_aian_michd,
+                       #nh_as_michd,
+                       #nh_nhpi_michd,
+                       nh_oth_michd, nh_multi_michd,
+                       #nh_nsure_michd,
+                       #nh_ref_michd
+                       )
+```
+
+### Skin Cancer T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$chcscncr)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_chcscncr <- bind_rows(result_list)
+#write.csv(h_w_chcscncr,"h_w_chcscncr_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_chcscncr <- bind_rows(result_list)
+#write.csv(h_b_chcscncr,"h_b_chcscncr_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_chcscncr <- bind_rows(result_list)
+#write.csv(h_aian_chcscncr,"h_aian_chcscncr_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_chcscncr <- bind_rows(result_list)
+#write.csv(h_as_chcscncr,"h_as_chcscncr_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_chcscncr <- bind_rows(result_list)
+#write.csv(h_nhpi_chcscncr,"h_nhpi_chcscncr_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_chcscncr <- bind_rows(result_list)
+#write.csv(h_oth_chcscncr,"h_oth_chcscncr_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_chcscncr <- bind_rows(result_list)
+#write.csv(h_multi_chcscncr,"h_multi_chcscncr_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_chcscncr <- bind_rows(result_list)
+#write.csv(h_nsure_chcscncr,"h_nsure_chcscncr_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_chcscncr <- bind_rows(result_list)
+#write.csv(h_ref_chcscncr,"h_ref_chcscncr_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_chcscncr <- bind_rows(result_list)
+#write.csv(nh_w_chcscncr,"nh_w_chcscncr_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_chcscncr <- bind_rows(result_list)
+#write.csv(nh_b_chcscncr,"nh_b_chcscncr_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_chcscncr <- bind_rows(result_list)
+#write.csv(nh_aian_chcscncr,"nh_aian_chcscncr_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_chcscncr <- bind_rows(result_list)
+#write.csv(nh_as_chcscncr,"nh_as_chcscncr_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_chcscncr <- bind_rows(result_list)
+#write.csv(nh_nhpi_chcscncr,"nh_nhpi_chcscncr_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_chcscncr <- bind_rows(result_list)
+#write.csv(nh_oth_chcscncr,"nh_oth_chcscncr_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_chcscncr <- bind_rows(result_list)
+#write.csv(nh_multi_chcscncr,"nh_multi_chcscncr_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_chcscncr <- bind_rows(result_list)
+#write.csv(nh_ns_chcscncr,"nh_ns_chcscncr_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(chcscncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_chcscncr <- bind_rows(result_list)
+#write.csv(nh_ref_chcscncr,"nh_ref_chcscncr_pr.csv")
+```
+
+```{r}
+chcscncr_ttest <- bind_rows(h_w_chcscncr,h_b_chcscncr,h_aian_chcscncr,#h_as_chcscncr,
+                       #h_nhpi_chcscncr,
+                       h_oth_chcscncr, h_multi_chcscncr,
+                       h_oth_chcscncr,h_nsure_chcscncr,h_ref_chcscncr,
+                       nh_w_chcscncr,nh_b_chcscncr,#nh_aian_chcscncr,
+                       #nh_as_chcscncr,
+                       #nh_nhpi_chcscncr,
+                       nh_oth_chcscncr, nh_multi_chcscncr,
+                       #nh_nsure_chcscncr,
+                       #nh_ref_chcscncr
+                       )
+```
+
+### Other Cancer T-Test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$chcocncr)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_chcocncr <- bind_rows(result_list)
+#write.csv(h_w_chcocncr,"h_w_chcocncr_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_chcocncr <- bind_rows(result_list)
+#write.csv(h_b_chcocncr,"h_b_chcocncr_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_chcocncr <- bind_rows(result_list)
+#write.csv(h_aian_chcocncr,"h_aian_chcocncr_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_chcocncr <- bind_rows(result_list)
+#write.csv(h_as_chcocncr,"h_as_chcocncr_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_chcocncr <- bind_rows(result_list)
+#write.csv(h_nhpi_chcocncr,"h_nhpi_chcocncr_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_chcocncr <- bind_rows(result_list)
+#write.csv(h_oth_chcocncr,"h_oth_chcocncr_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_chcocncr <- bind_rows(result_list)
+#write.csv(h_multi_chcocncr,"h_multi_chcocncr_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_chcocncr <- bind_rows(result_list)
+##write.csv(h_nsure_chcocncr,"h_nsure_chcocncr_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_chcocncr <- bind_rows(result_list)
+##write.csv(h_ref_chcocncr,"h_ref_chcocncr_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_chcocncr <- bind_rows(result_list)
+##write.csv(nh_w_chcocncr,"nh_w_chcocncr_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_chcocncr <- bind_rows(result_list)
+##write.csv(nh_b_chcocncr,"nh_b_chcocncr_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_chcocncr <- bind_rows(result_list)
+##write.csv(nh_aian_chcocncr,"nh_aian_chcocncr_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_chcocncr <- bind_rows(result_list)
+##write.csv(nh_as_chcocncr,"nh_as_chcocncr_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_chcocncr <- bind_rows(result_list)
+##write.csv(nh_nhpi_chcocncr,"nh_nhpi_chcocncr_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_chcocncr <- bind_rows(result_list)
+##write.csv(nh_oth_chcocncr,"nh_oth_chcocncr_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_chcocncr <- bind_rows(result_list)
+##write.csv(nh_multi_chcocncr,"nh_multi_chcocncr_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_chcocncr <- bind_rows(result_list)
+##write.csv(nh_ns_chcocncr,"nh_ns_chcocncr_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(chcocncr == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_chcocncr <- bind_rows(result_list)
+##write.csv(nh_ref_chcocncr,"nh_ref_chcocncr_pr.csv")
+```
+
+### Health Plan T-test by Race/Ethnicity
+
+```{r message=FALSE, warning=FALSE, echo= TRUE}
+
+response_levels <- levels(df_comb_dsgn$variables$hlthpln1)
+response_race <- levels(df_comb_dsgn$variables$racexhisp)
+result_list <- list()
+```
+
+#### Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic White")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_w_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_w_hlthpln1,"h_w_hlthpln1_pr.csv")
+```
+
+#### Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Black")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_b_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_b_hlthpln1,"h_b_hlthpln1_pr.csv")
+```
+
+#### Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic AIAN")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_aian_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_aian_hlthpln1,"h_aian_hlthpln1_pr.csv")
+```
+
+#### Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Asian")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_as_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_as_hlthpln1,"h_as_hlthpln1_pr.csv")
+```
+
+#### Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic NHPI")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nhpi_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_nhpi_hlthpln1,"h_nhpi_hlthpln1_pr.csv")
+```
+
+#### Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Other")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_oth_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_oth_hlthpln1,"h_oth_hlthpln1_pr.csv")
+```
+
+#### Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Multirracial")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_multi_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_multi_hlthpln1,"h_multi_hlthpln1_pr.csv")
+```
+
+#### Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Not Sure")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_nsure_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_nsure_hlthpln1,"h_nsure_hlthpln1_pr.csv")
+```
+
+#### Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Hispanic Refused")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+h_ref_hlthpln1 <- bind_rows(result_list)
+##write.csv(h_ref_hlthpln1,"h_ref_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic White
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic White")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic White",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_w_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_w_hlthpln1,"nh_w_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic Black
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Black")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Black",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_b_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_b_hlthpln1,"nh_b_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic AIAN
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic AIAN")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic AIAN",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_aian_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_aian_hlthpln1,"nh_aian_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic Asian
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Asian")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Asian",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_as_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_as_hlthpln1,"nh_as_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic NHPI
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic NHPI")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic NHPI",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_nhpi_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_nhpi_hlthpln1,"nh_nhpi_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic Other
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Other")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Other",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_oth_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_oth_hlthpln1,"nh_oth_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic Multirracial
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Multirracial")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Multirracial",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_multi_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_multi_hlthpln1,"nh_multi_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic Not Sure
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Not Sure")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Not Sure",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ns_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_ns_hlthpln1,"nh_ns_hlthpln1_pr.csv")
+```
+
+#### Non Hispanic Refused
+
+```{r}
+for (level in response_levels) {
+  
+    sub_desgn <- subset(df_comb_dsgn, racexhisp == "Non Hispanic Refused")
+  
+    formula_str <- paste0("I(hlthpln1 == \"", level,"\") ~ year")
+    formula_obj <- as.formula(formula_str)
+    test_result <- svyttest(formula_obj, sub_desgn)
+    result_list[[level]] <- data.frame(
+        race = "Non Hispanic Refused",
+        health_level = level,
+        t_stat = test_result$statistic,
+        p = test_result$p.value,
+        lower_ci = test_result$conf.int[1],
+        upper_ci = test_result$conf.int[2],
+        row.names = NULL)
+}
+
+nh_ref_hlthpln1 <- bind_rows(result_list)
+##write.csv(nh_ref_hlthpln1,"nh_ref_hlthpln1_pr.csv")
+```
+
+### Export T-test results
+
+```{r}
+ttest_list <- list("GenHlth" = genhlth_ttest,"GenHlth2"=genhlth2_ttest,
+                       "MentHlth" = addepev2_ttest,"Asthma"=ltasth1_ttest,
+                       "Diabete" = diabete3_ttest,"Diabete2"= diabete2_ttest,
+                       "SknCan"= chcscncr_ttest)
+
+write.xlsx(ttest_list, "ttest_list.xlsx")
+
+```
+
